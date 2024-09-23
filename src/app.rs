@@ -355,39 +355,6 @@ impl App {
     fn next_piece(&mut self) -> Result<()> {
         self.current_piece = self.next_piece.clone();
         let mut rng = thread_rng();
-        let random_num = rng.gen_range(0..4);
-        let colors = vec![Color::White, Color::Cyan, Color::Yellow, Color::Red, Color::Blue, Color::Magenta, Color::Green];
-        if random_num == 0 {
-            self.next_piece = Piece::long();
-        }
-        else if random_num == 1 {
-            self.next_piece = Piece::square();
-        }
-        else if random_num == 2 {
-            self.next_piece = Piece::t_piece(); 
-        }
-        else if random_num == 3 {
-            self.next_piece = Piece::l_piece();
-        }
-        self.current_piece.set_center();
-        for _ in 0..rng.gen_range(0..3) {
-            self.rotate_current()?;
-        }
-        self.next_piece.color = colors[rng.gen_range(0..colors.len())];
-
-        for _ in 0..12 {
-            self.next_piece.move_right(true)?;
-            self.current_piece.move_left(true)?;
-        }
-        for _ in 0..3 {
-            self.next_piece.move_down()?;
-            self.current_piece.move_up()?;
-        }
-        Ok(())
-    }
-
-    fn init_queue(&mut self) -> Result<()> {
-        let mut rng = thread_rng();
         let random_num = rng.gen_range(0..=4);
         let colors = vec![Color::White, Color::Cyan, Color::Yellow, Color::Red, Color::Blue, Color::Magenta, Color::Green];
         if random_num == 0 {
@@ -415,6 +382,45 @@ impl App {
             }
             else {
                 self.next_piece = Piece::z_piece();
+            }
+        }
+        self.current_piece.set_center();
+        for _ in 0..rng.gen_range(0..3) {
+            self.rotate_current()?;
+        }
+        self.next_piece.color = colors[rng.gen_range(0..colors.len())];
+
+        for _ in 0..12 {
+            self.next_piece.move_right(true)?;
+            self.current_piece.move_left(true)?;
+        }
+        for _ in 0..3 {
+            self.next_piece.move_down()?;
+            self.current_piece.move_up()?;
+        }
+        Ok(())
+    }
+
+    fn init_queue(&mut self) -> Result<()> {
+        let mut rng = thread_rng();
+        let random_num = rng.gen_range(0..4);
+        let colors = vec![Color::White, Color::Cyan, Color::Yellow, Color::Red, Color::Blue, Color::Magenta, Color::Green];
+        if random_num == 0 {
+            self.next_piece = Piece::long();
+        }
+        else if random_num == 1 {
+            self.next_piece = Piece::square();
+        }
+        else if random_num == 2 {
+            self.next_piece = Piece::t_piece(); 
+        }
+        else if random_num == 3 {
+            let random_num_for_orientation = rng.gen_range(0.0..1.0);
+            if random_num_for_orientation < 0.5 {
+                self.next_piece = Piece::inverted_l_piece();
+            }
+            else {
+                self.next_piece = Piece::l_piece();
             }
         }
         self.next_piece.color = colors[rng.gen_range(0..colors.len())];
