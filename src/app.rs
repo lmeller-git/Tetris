@@ -1,4 +1,4 @@
-use crate::tui;
+use crate::{debug::Logger, tui};
 
 use color_eyre::{
     eyre::WrapErr, Result
@@ -14,7 +14,7 @@ use ratatui::{
     widgets::{block::*, canvas::{Canvas, Rectangle}, Paragraph, *}
 };
 
-use std::{env, thread};
+use std::{env, rc::Rc, cell::RefCell};
 
 use std::time::Duration;
 
@@ -31,6 +31,7 @@ pub struct App {
     pieces: Vec<Piece>,
     next_piece: Piece,
     padding: f64,
+    logger: Rc<RefCell<Logger>>
 }
 
 impl Widget for &App {
@@ -162,7 +163,7 @@ impl App {
             let time = 500000;
             if event::poll(Duration::from_micros(time))? {
                 self.handle_events().wrap_err("handle events failed")?;
-                thread::sleep(Duration::from_micros(50000));
+                //thread::sleep(Duration::from_micros(50000));
             }
             if self.exit {
                 break;
@@ -198,17 +199,18 @@ impl App {
         }
     }
 
-    pub fn new() -> Result<App> {
+    pub fn new(logger: Rc<RefCell<Logger>>) -> Result<App> {
         let mut app = App {
             score: 0,
             highscore: 0,
             exit: false,
             dead: false,
             on_pause: false,
-            current_piece: Piece::placeholder(), // make these random
+            current_piece: Piece::placeholder(),
             pieces: vec![],
             next_piece: Piece::placeholder(),
-            padding: 0.0, // 2.0 seems good
+            padding: 2.0, // 2.0 seems good too,
+            logger: logger
         };
         app.init_queue()?;
         app.next_piece()?;
@@ -230,27 +232,23 @@ impl App {
     }
 
     fn restart(&mut self) -> Result<()> {
+        let path_to_self = env::current_exe()?;
+        let path = path_to_self
+            .parent()
+            .and_then(|p| p.parent())
+            .and_then(|p|p.parent())
+            .map(|p|p.join("Highscore.bin"))
+            .unwrap();
+        save(&path, self.highscore)?;
+        
+        let num = read(&path)?;
 
-        if self.dead {
-            let path_to_self = env::current_exe()?;
-            let path = path_to_self
-                .parent()
-                .and_then(|p| p.parent())
-                .and_then(|p|p.parent())
-                .map(|p|p.join("Highscore.bin"))
-                .unwrap();
-            save(&path, self.highscore)?;
-            
-            let num = read(&path)?;
-
-            self.highscore = num;
-            self.score = 0;
-            self.on_pause = false;
-            self.dead = false;
-            self.pieces = vec![];
-            self.next_piece()?;
-        }
-
+        self.highscore = num;
+        self.score = 0;
+        self.on_pause = false;
+        self.dead = false;
+        self.pieces = vec![];
+        self.next_piece()?;
         Ok(())
     }
 
@@ -279,18 +277,16 @@ impl App {
 
     fn row_clear(&mut self, min: f64, max: f64) -> Result<()> {
         let mut deleted_rows = vec![];
-        let start = (min / 10.0).to_i8().unwrap();
-        let stop = (max / 10.0).to_i8().unwrap();
-        for i in start..(stop + 1) {
-            let row = Piece::whole_line((10 * i).to_f64().unwrap());
+        for i in (min as i8..(max as i8 + 1)).step_by(10) {
+            let row = Piece::whole_line(i as f64);
             if row.components.iter().map(|cmp| {
                 self.pieces.iter().map(|piece| {
                     piece.is_blocked(cmp)
                 }).any(|x| x)
-            }).all(|x| x) { // if the piece is manually moved in the moment it hits the bottom this evauates to false somehow
-                self.delete_row((10 * i).to_f64().unwrap())?;
+            }).all(|x| x) {
+                self.delete_row(i)?;
                 self.score += 1000;
-                deleted_rows.push((10 * i).to_f64().unwrap());
+                deleted_rows.push(i);
             }
         }
         deleted_rows.reverse();
@@ -304,14 +300,15 @@ impl App {
         Ok(())
     }
 
-    fn delete_row(&mut self, row: f64) -> Result<()> {
+    fn delete_row(&mut self, row: i8) -> Result<()> {
+        self.logger.borrow_mut().push(format!("deleting row at {}", row));
         for piece in self.pieces.iter_mut() {
-            if piece.max_y < row || piece.min_y > row {
+            if (piece.max_y as i8) < row || (piece.min_y as i8) > row {
                 continue;
             }
             let mut count = 0;
             for (i, cmp) in piece.components.clone().iter().enumerate() {
-                if cmp.y == row {
+                if cmp.y as i8 == row {
                     piece.components.remove(i - count);
                     count += 1;
                 }
@@ -320,10 +317,10 @@ impl App {
         Ok(())
     }
 
-    fn gravity(&mut self, y: f64) -> Result<()> {
+    fn gravity(&mut self, y: i8) -> Result<()> {
         for piece in self.pieces.iter_mut() {
             for cmp in piece.components.iter_mut() {
-                if cmp.y < y {
+                if (cmp.y as i8) < y {
                     continue;
                 }
                 cmp.y -= 10.0;
@@ -335,10 +332,12 @@ impl App {
     fn handle_piece(&mut self) -> Result<()> {
         self.move_current_down()?;
         if self.current_piece_at_bottom()? {
+            self.logger.borrow_mut().push(format!("piece at bottom, min y: {}", self.current_piece.min_y));
             self.pieces.push(self.current_piece.clone());
             self.row_clear(self.current_piece.min_y, self.current_piece.max_y)?;
             self.next_piece()?;
         }
+        self.row_clear(-90.0, 80.0)?;
         Ok(())
     }
 
@@ -804,6 +803,7 @@ fn get_min_x(cmps: Vec<SimplePiece>) -> f64 {
 }
 
 fn round_to_tenths(num: f64) -> f64 {
+    //TODO: modulus
     let int = num.round().to_i64().unwrap();
     let diff = num / 10.0 - (int / 10).to_f64().unwrap();
     diff * 10.0
