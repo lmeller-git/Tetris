@@ -85,15 +85,6 @@ impl Widget for &App {
                     .render(area, buf);
 
                 }
-                
-                if self.on_pause {
-                    let death_text = Line::from(vec![Span::from(" Paused "), Span::from(self.score.to_string().bold())]);
-                    Paragraph::new(death_text)
-                    .block(block.clone())
-                    .centered()
-                    .render(area, buf);
-
-                }
 
                 if !self.dead {
                     Canvas::default()
@@ -141,16 +132,11 @@ impl Widget for &App {
                                     color: self.next_piece.color
                                 });
                             }
+                            if self.on_pause {
+                                ctx.print(-5.0, 80.0, text::Line::from(" Paused "));
+                            }
                         })
                         .render(area, buf);
-
-                    if self.on_pause {
-                        Paragraph::new(Line::from("Paused"))
-                            .block(block.clone())
-                            .centered()
-                            .bold()
-                            .render(area, buf);
-                    }
                 }
     }   
 }
